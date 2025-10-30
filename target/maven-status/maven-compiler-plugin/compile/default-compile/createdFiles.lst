@@ -1,0 +1,5 @@
+com\mycompany\swf_workload_generator\ConfigurationReader.class
+com\mycompany\swf_workload_generator\Job.class
+com\mycompany\swf_workload_generator\ArrivalComparator.class
+com\mycompany\swf_workload_generator\Output.class
+com\mycompany\swf_workload_generator\SWF_Workload_Generator.class
