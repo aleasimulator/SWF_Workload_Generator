@@ -88,6 +88,13 @@ Similarly, to compile it, run:
 ```
  mvn compile
 ```
+**IMPORTANT NOTE:** If you run into java version issues, use `java -version` to verify your java version and adjust `pom.xml` accordingly (set `<maven.compiler.source>` and `<maven.compiler.target>` tags to your java version, e.g., `21` or `17`, etc.).
+
+Next, clean and build the whole generator:
+```
+mvn clean compile    (Deletes old compiled classes first → forces recompile with correct version)
+mvn clean package    (Same as above + builds the final .jar)
+```
 
 ##### Software licence:
 This software is provided as is, free of charge under the terms of the LGPL licence. 

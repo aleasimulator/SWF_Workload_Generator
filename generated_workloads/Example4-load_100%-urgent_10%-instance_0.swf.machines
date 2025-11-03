@@ -1,0 +1,4 @@
+;cl_id	name		nodes	CPUs	speed	GB_RAM	properties	GPUs
+;-----------------------------------------------------------------------------
+0	cl_dedicated 	 4 	 1 	 1 	 256 	 dedicated 	 4
+1	cl_normal_1 	 64 	 1 	 1 	 256 	 normal 	 4

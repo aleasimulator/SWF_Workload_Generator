@@ -1,0 +1,4 @@
+;group_id	group_name	shares	CPU_quota
+;-----------------------------------------------------------------------------
+0	priority_group 	 2 	 100
+1	normal_group 	 1 	 96
