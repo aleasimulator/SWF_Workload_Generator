@@ -2,7 +2,7 @@
 
 ## Summary
 The generator creates an extended, **SWF-like workload format** and additional files needed by the **AleaNG simulator** to perform detailed job scheduling simulations. 
-Notably, thi generator creates: 
+Notably, the generator creates: 
 1) *job file* (in extended SWF format, see SWF description: https://www.cs.huji.ac.il/labs/parallel/workload/swf.html) 
 2) *machine file* (describing clusters)
 3) *queue file* (describing queues and their limits and priorities)
@@ -48,7 +48,7 @@ This is repeated for every simulation day (based on the specified duration of th
 ### Configuration
 
 The generator uses `configuration.properties` file where all options are explained, as shown below in an example.
-```
+```ini
 # DATA_SET name (output workload name)
 workload_filename=Example1.swf
 
@@ -99,6 +99,7 @@ mvn clean package    (Same as above + builds the final .jar)
 ##### Software licence:
 This software is provided as is, free of charge under the terms of the LGPL licence. 
 
-### Important
-**When using AleaNG in your paper or presentation**, please use the following citations as an acknowledgement. Thank you!
-- Dalibor Klusáček. *Fair-Sharing Simulator for Batch Computing Systems*. In proceedings of the 15th International Conference on Parallel Processing & Applied Mathematics (PPAM 2024), Springer, 2024.
+## Important
+**When using AleaNG or this generator in your paper or presentation**, please use the following citations as an acknowledgement. Thank you!
+* Dalibor Klusáček and Václav Chlumský. "*Fair-sharing simulator: Toward fair scheduling in batch computing systems*". In The International Journal of High Performance Computing Applications, Sage, 2025. https://doi.org/10.1177/10943420251385673
+* Dalibor Klusáček. "*Fair-Sharing Simulator for Batch Computing Systems*". In proceedings of the 15th International Conference on Parallel Processing & Applied Mathematics (PPAM 2024), Springer, 2024.
