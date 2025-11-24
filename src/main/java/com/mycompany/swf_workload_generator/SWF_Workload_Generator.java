@@ -1,10 +1,15 @@
 package com.mycompany.swf_workload_generator;
 
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedList;
 import java.util.Random;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Class SWF_Workload_Generator
@@ -19,7 +24,7 @@ import java.util.Random;
 public class SWF_Workload_Generator {
 
     static ConfigurationReader cfg = null;
-    static LinkedList<Job> created_jobs = new LinkedList();
+    static ArrayList<Job> created_jobs = new ArrayList();
     static String def_workload_filename = "default.swf";
     static String workload_filename = "";
     static String workload_dir = "";
@@ -87,6 +92,8 @@ public class SWF_Workload_Generator {
     static String[] queue_names;
     static String[] machine_names;
 
+    static boolean allocate_whole_nodes;
+    static int[] number_of_nodes_for_job;
     static int[] tiny_job_sizes;
     static int[] small_job_sizes;
     static int[] large_job_sizes;
@@ -95,7 +102,8 @@ public class SWF_Workload_Generator {
     static int[] inter_batch_idle_period_urgent;
     static int[] inter_batch_idle_period_normal;
     static int[] used_RAM = {1024 * 1024, 1024 * 1024 * 8, 1024 * 1024 * 16, 1024 * 1024 * 32};
-    static int[] used_GPU_cards_per_node = {0, 0, 0, 0, 1, 1, 2, 4};
+    static int[] used_GPU_cards_per_node = {0, 0, 0, 0, 0, 1, 2, 2};
+    
 
     public static void main(String[] args) {
         System.out.println("============================================");
@@ -135,6 +143,7 @@ public class SWF_Workload_Generator {
         batch_size_small = cfg.getInt("batch_size_small");
         batch_size_tiny = cfg.getInt("batch_size_tiny");
 
+        number_of_nodes_for_job = cfg.getIntArray("number_of_nodes_for_job");
         tiny_job_sizes = cfg.getIntArray("tiny_job_sizes");
         small_job_sizes = cfg.getIntArray("small_job_sizes");
         large_job_sizes = cfg.getIntArray("large_job_sizes");
@@ -142,6 +151,8 @@ public class SWF_Workload_Generator {
         job_runtime_limit = cfg.getIntArray("job_runtime_limit");
         inter_batch_idle_period_urgent = cfg.getIntArray("inter_batch_idle_period_urgent");
         inter_batch_idle_period_normal = cfg.getIntArray("inter_batch_idle_period_normal");
+
+        allocate_whole_nodes = cfg.getBoolean("allocate_whole_nodes");
 
         for (int w = 0; w < workload_instances; w++) {
             // create new seed for each workload instance
@@ -252,30 +263,39 @@ public class SWF_Workload_Generator {
                         int runtime = Math.max(60, walltime_limit - seed.nextInt(7200));
                         int ram = used_RAM[seed.nextInt(used_RAM.length)];
 
-                        int required_nodes = 1;
+                        int required_CPUs_per_node = 1;
 
                         switch (job_type) {
                             case 0:
                                 // urgent small user
-                                required_nodes = tiny_job_sizes[seed.nextInt(tiny_job_sizes.length)];
+                                required_CPUs_per_node = tiny_job_sizes[seed.nextInt(tiny_job_sizes.length)];
                                 break;
                             case 1:
                                 // urgent large user
-                                required_nodes = small_job_sizes[seed.nextInt(small_job_sizes.length)];
+                                required_CPUs_per_node = small_job_sizes[seed.nextInt(small_job_sizes.length)];
                                 break;
                             case 2:
                                 // normal tiny user
-                                required_nodes = large_job_sizes[seed.nextInt(large_job_sizes.length)];
+                                required_CPUs_per_node = large_job_sizes[seed.nextInt(large_job_sizes.length)];
                                 break;
 
                             default:
                                 throw new AssertionError();
                         }
-                        int total_used_gpus = used_GPU_cards_per_node[seed.nextInt(used_GPU_cards_per_node.length)] * required_nodes;
+                        int total_used_gpus = 0;
+                        int number_of_nodes = 0;
+                        if (allocate_whole_nodes) {
+                            number_of_nodes = 1;
+                            // since we ALLOCATE WHOLE NODES, here required_CPUs_per_node actually means the number of allocated whole nodes
+                            total_used_gpus = used_GPU_cards_per_node[seed.nextInt(used_GPU_cards_per_node.length)] * required_CPUs_per_node;
+                        } else {
+                            number_of_nodes = number_of_nodes_for_job[seed.nextInt(number_of_nodes_for_job.length)];
+                            total_used_gpus = used_GPU_cards_per_node[seed.nextInt(used_GPU_cards_per_node.length)] * number_of_nodes;
+                        }
 
                         int soft_walltime = runtime;
 
-                        cpu_time_for_one_user += runtime * required_nodes;
+                        cpu_time_for_one_user += runtime * required_CPUs_per_node * number_of_nodes;
                         if (cpu_time_for_one_user >= average_cpu_time_for_one_user) {
                             break;
                         }
@@ -284,8 +304,14 @@ public class SWF_Workload_Generator {
                             System.out.println(current_time + ": Adding " + job_id + " job from day " + d + " of user " + (user_names[current_user_id].split("\t")[0]) + " into workload... ");
                         }
 
-                        String jobstring = "0 " + runtime + " " + required_nodes + " " + runtime + " " + ram + " " + required_nodes
-                                + " " + walltime_limit + " " + ram + " 1 " + (current_user_id + user_id_baseline) + " " + group + " -1 " + queue + " -1 -1 -1 " + total_used_gpus + " " + soft_walltime + " " + properties;
+                        // we provide additional description of job layout (num_nodes x CPUs per node)
+                        String job_properties = properties;
+                        if (!allocate_whole_nodes) {
+                            job_properties = properties + ":" + number_of_nodes + "x" + required_CPUs_per_node;
+                        }
+
+                        String jobstring = "0 " + runtime + " " + (required_CPUs_per_node * number_of_nodes) + " " + runtime + " " + ram + " " + (required_CPUs_per_node * number_of_nodes)
+                                + " " + walltime_limit + " " + ram + " 1 " + (current_user_id + user_id_baseline) + " " + group + " -1 " + queue + " -1 -1 -1 " + total_used_gpus + " " + soft_walltime + " " + job_properties;
                         Job j = new Job(current_time, job_id + "", jobstring);
                         created_jobs.add(j);
 
@@ -458,24 +484,30 @@ public class SWF_Workload_Generator {
         //generate jobs in batches for all users
         int job_id = 1;
 
-        // create all jobs
-        for (int i = 0; i < created_jobs.size(); i++) {
-            Job job = created_jobs.get(i);
-            try {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(workload_filename, true), 4 * 1024 * 1024)) { // 1 MB buffer
+
+            PrintWriter pw = new PrintWriter(new FileWriter(workload_filename, true));
+
+            // create all jobs
+            for (int i = 0; i < created_jobs.size(); i++) {
+                Job job = created_jobs.get(i);
+
                 if (job_id % 100 == 0) {
                     System.out.println("Adding " + job_id + " into workload... ");
                 }
 
                 String jobstring = job_id + " " + job.getArrival() + " " + job.getJob();
 
-                out.writeString(workload_filename, jobstring);
+                //pw.println(jobstring);
+                bw.write(jobstring);
+                bw.newLine();
 
-            } catch (IOException ex) {
-                ex.printStackTrace();
+                job_id++;
             }
-            job_id++;
+            System.out.println("Workload generation completed. Total jobs created = " + (job_id - 1));
+        } catch (IOException ex) {
+            Logger.getLogger(SWF_Workload_Generator.class.getName()).log(Level.SEVERE, null, ex);
         }
-        System.out.println("Workload generation completed. Total jobs created = " + (job_id - 1));
     }
 
 }

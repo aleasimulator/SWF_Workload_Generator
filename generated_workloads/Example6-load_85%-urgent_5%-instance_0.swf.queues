@@ -1,0 +1,4 @@
+; id	queue_name	CPU_quota	priority
+;-----------------------------------------------------------------------------
+0	priority_queue 	 500 	 50
+1	default_queue 	 400 	 20

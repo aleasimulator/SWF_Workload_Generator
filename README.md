@@ -24,7 +24,9 @@ In the generator configuration various parameters allows you to:
 - Specify groups and their priorities and CPU quota limits
 - Specify queues, their priorities, and CPU quota limits
 - Specify clusters, their names, nodes, GPUs, and properties 
-  - (a property is used to steer a job toward an eligible cluster)  
+  - (a property is used to steer a job toward an eligible cluster) 
+- Select whether jobs occupy whole nodes or can run side-by-side with other jobs (space-sharing)
+  - Specify the maximum number of nodes that can be allocated 
 - Specify job batch sizes (number of jobs submitted at once), 
   - 3 batch sizes are supported (for large, small, and tiny jobs). 
   - Specify sizes (intervals) of tiny, small, and large jobs
