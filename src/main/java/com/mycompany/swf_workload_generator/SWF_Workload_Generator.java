@@ -39,27 +39,27 @@ public class SWF_Workload_Generator {
             + "; --------------------------------------------------------------------------- \n"
             + "; JOB FIELDS MEANING: \n"
             + "; --------------------------------------------------------------------------- \n"
-            + ";  0: job_id\n"
-            + ";  1: submit_time\n"
-            + ";  2: wait_time\n"
-            + ";  3: runtime\n"
-            + ";  4: allocated_nodes (number of allocated nodes)\n"
-            + ";  5: CPU_time_used (not used, same as runtime)\n"
-            + ";  6: RAM (used, in kB)\n"
-            + ";  7: required_nodes (same as allocated nodes)\n"
-            + ";  8: walltime_limit (user-provided upper bound runtime limit)\n"
-            + ";  9: RAM (requested, in kB)\n"
-            + "; 10: job_status (always 1, not used) \n"
-            + "; 11: user_id \n"
-            + "; 12: group_id \n"
-            + "; 13: executable_number (not used) \n"
-            + "; 14: queue_id \n"
-            + "; 15: partition (-1, not used) \n"
-            + "; 16: preceding_job (-1, not used) \n"
-            + "; 17: think_time (-1, not used) \n"
-            + "; 18: used_GPUs (sum over all used nodes) \n"
-            + "; 19: soft_walltime (\"expected\" runtime - smaller than walltime - that can be exceeded without killing the job) \n"
-            + "; 20: required_properties (a String property that matches to String property of the cluster. If the property is \"all\", then this job can execute on any cluster. Otherwise, only a cluster that matches this String is acceptable)\n"
+            + ";  0: job_id              (unique ID)\n"
+            + ";  1: submit_time         (in seconds from 0)\n"
+            + ";  2: wait_time           (in seconds)\n"
+            + ";  3: runtime             (in seconds)\n"
+            + ";  4: allocated_nodes     (number of all allocated nodes/or number of all allocated CPU cores)\n"
+            + ";  5: CPU_time_used       (not used, same as runtime)\n"
+            + ";  6: RAM                 (used, in kB)\n"
+            + ";  7: required_nodes      (same as allocated nodes/cores)\n"
+            + ";  8: walltime_limit      (user-provided upper bound runtime limit in seconds)\n"
+            + ";  9: RAM                 (requested, in kB)\n"
+            + "; 10: job_status          (always 1, not used) \n"
+            + "; 11: user_id             (must match with user IDs specified in user desc. file)\n"
+            + "; 12: group_id            (must match with group IDs specified in group desc. file)\n"
+            + "; 13: executable_number   (-1, not used) \n"
+            + "; 14: queue_id            (must match with queue IDs specified in queue desc. file)\n"
+            + "; 15: partition           (-1, not used) \n"
+            + "; 16: preceding_job       (-1, not used) \n"
+            + "; 17: think_time          (-1, not used) \n"
+            + "; 18: used_GPUs           (sum over all used nodes, must be divisible by the number of used nodes) \n"
+            + "; 19: soft_walltime       (\"expected\" runtime in seconds - smaller than walltime - that can be exceeded without killing the job) \n"
+            + "; 20: required_properties (separated by \":\", example: \"all:excl:2x4\" The first property \"all\" is used to match the String property of a cluster. If the property is \"all\", then this job can execute on any cluster. Otherwise, only a cluster that matches this String is acceptable. \"excl\" means that this job requires whole node(s) exclusively (no space-sharing with other jobs). \"2x4\" means that this job requires two nodes, each having at least 4 CPU cores.)\n"
             + "; --------------------------------------------------------------------------- \n";
 
     static String queues_header = "; id\tqueue_name\tCPU_quota\tpriority\n"
@@ -79,6 +79,9 @@ public class SWF_Workload_Generator {
     static int load_percentage_normal = 0;
     static int urgent_user_count = 0;
     static int normal_user_count = 0;
+    static boolean allow_exclusive_jobs;
+    static int exclusive_percentage = 0;
+    static int largest_node_cpus = 0;
 
     static int batch_size = 0;
     static int batch_size_large = 1;
@@ -92,7 +95,7 @@ public class SWF_Workload_Generator {
     static String[] queue_names;
     static String[] machine_names;
 
-    static boolean allocate_whole_nodes;
+    static boolean all_jobs_allocate_whole_nodes;
     static int[] number_of_nodes_for_job;
     static int[] tiny_job_sizes;
     static int[] small_job_sizes;
@@ -103,7 +106,6 @@ public class SWF_Workload_Generator {
     static int[] inter_batch_idle_period_normal;
     static int[] used_RAM = {1024 * 1024, 1024 * 1024 * 8, 1024 * 1024 * 16, 1024 * 1024 * 32};
     static int[] used_GPU_cards_per_node = {0, 0, 0, 0, 0, 1, 2, 2};
-    
 
     public static void main(String[] args) {
         System.out.println("============================================");
@@ -124,7 +126,10 @@ public class SWF_Workload_Generator {
 
         load_percentage_urgent = cfg.getInt("load_percentage_urgent");
         load_percentage_normal = 100 - load_percentage_urgent;
+        allow_exclusive_jobs = cfg.getBoolean("allow_exclusive_jobs");
+        exclusive_percentage = cfg.getInt("exclusive_percentage");
         total_cpus = cfg.getInt("total_cpus");
+        largest_node_cpus = cfg.getInt("largest_node_cpus");
         system_load = cfg.getDouble("system_load");
         def_workload_filename = cfg.getString("workload_filename");
         workload_dir = cfg.getString("workload_dir");
@@ -152,7 +157,7 @@ public class SWF_Workload_Generator {
         inter_batch_idle_period_urgent = cfg.getIntArray("inter_batch_idle_period_urgent");
         inter_batch_idle_period_normal = cfg.getIntArray("inter_batch_idle_period_normal");
 
-        allocate_whole_nodes = cfg.getBoolean("allocate_whole_nodes");
+        all_jobs_allocate_whole_nodes = cfg.getBoolean("all_jobs_allocate_whole_nodes");
 
         for (int w = 0; w < workload_instances; w++) {
             // create new seed for each workload instance
@@ -162,9 +167,10 @@ public class SWF_Workload_Generator {
             workload_filename = def_workload_filename.split("\\.")[0] + "-instance" + workload_id + ".swf";
             workload_filename = workload_dir + File.separator + workload_filename;
             Random seed = new Random(rnd_seed);
+            Random excl_seed = new Random(rnd_seed);
             created_jobs.clear();
-            generate_jobs("urgent", seed);
-            generate_jobs("normal", seed);
+            generate_jobs("urgent", seed, excl_seed);
+            generate_jobs("normal", seed, excl_seed);
             sort_and_print_jobs(user_dir);
             generate_queues(user_dir);
             generate_machines(user_dir);
@@ -179,7 +185,7 @@ public class SWF_Workload_Generator {
 
     }
 
-    static void generate_jobs(String user_type, Random seed) {
+    static void generate_jobs(String user_type, Random seed, Random excl_seed) {
         System.out.println("--------------------------------");
         System.out.println("Generating " + user_type + " jobs...");
         System.out.println("--------------------------------");
@@ -226,7 +232,8 @@ public class SWF_Workload_Generator {
             } else {
                 properties = "normal";
                 group = 1;
-                queue = 1;
+                // default low priority queue
+                queue = Math.max(0,(queue_names.length-1));
             }
             int job_type = 0;
             if (user_name.contains("tiny")) {
@@ -284,7 +291,7 @@ public class SWF_Workload_Generator {
                         }
                         int total_used_gpus = 0;
                         int number_of_nodes = 0;
-                        if (allocate_whole_nodes) {
+                        if (all_jobs_allocate_whole_nodes) {
                             number_of_nodes = 1;
                             // since we ALLOCATE WHOLE NODES, here required_CPUs_per_node actually means the number of allocated whole nodes
                             total_used_gpus = used_GPU_cards_per_node[seed.nextInt(used_GPU_cards_per_node.length)] * required_CPUs_per_node;
@@ -295,7 +302,33 @@ public class SWF_Workload_Generator {
 
                         int soft_walltime = runtime;
 
-                        cpu_time_for_one_user += runtime * required_CPUs_per_node * number_of_nodes;
+                        // we provide additional description of job layout (num_nodes x CPUs per node)
+                        String job_properties = properties;
+                        if (allow_exclusive_jobs) {
+                            // if the random number (0..100) falls bellow exclusive_percentage then this job is exclusive
+                            if (exclusive_percentage > excl_seed.nextInt(0, 101)) {
+                                job_properties = job_properties + ":excl";
+                            }
+                        }
+                        if (!all_jobs_allocate_whole_nodes) {
+                            job_properties = job_properties + ":" + number_of_nodes + "x" + required_CPUs_per_node;
+                        }
+                        
+                        int queue_id = queue;
+
+                        // if the job is exclusive, use whole node's size as the number of consumed cpu cores AND possibly use special queue for it
+                        if (job_properties.contains(":excl")) {
+                            cpu_time_for_one_user += runtime * largest_node_cpus * number_of_nodes;
+                            int qindex = queuesContainThisQueue("exclusive");
+                            System.out.println(job_id+" EXCL "+qindex+" prop:"+job_properties+" queue:"+queue);
+                            if (qindex > -1 && job_properties.contains("normal")) {
+                                queue_id = qindex;
+                            }
+
+                        } else {
+                            cpu_time_for_one_user += runtime * required_CPUs_per_node * number_of_nodes;
+                        }
+
                         if (cpu_time_for_one_user >= average_cpu_time_for_one_user) {
                             break;
                         }
@@ -304,14 +337,8 @@ public class SWF_Workload_Generator {
                             System.out.println(current_time + ": Adding " + job_id + " job from day " + d + " of user " + (user_names[current_user_id].split("\t")[0]) + " into workload... ");
                         }
 
-                        // we provide additional description of job layout (num_nodes x CPUs per node)
-                        String job_properties = properties;
-                        if (!allocate_whole_nodes) {
-                            job_properties = properties + ":" + number_of_nodes + "x" + required_CPUs_per_node;
-                        }
-
                         String jobstring = "0 " + runtime + " " + (required_CPUs_per_node * number_of_nodes) + " " + runtime + " " + ram + " " + (required_CPUs_per_node * number_of_nodes)
-                                + " " + walltime_limit + " " + ram + " 1 " + (current_user_id + user_id_baseline) + " " + group + " -1 " + queue + " -1 -1 -1 " + total_used_gpus + " " + soft_walltime + " " + job_properties;
+                                + " " + walltime_limit + " " + ram + " 1 " + (current_user_id + user_id_baseline) + " " + group + " -1 " + queue_id + " -1 -1 -1 " + total_used_gpus + " " + soft_walltime + " " + job_properties;
                         Job j = new Job(current_time, job_id + "", jobstring);
                         created_jobs.add(j);
 
@@ -508,6 +535,17 @@ public class SWF_Workload_Generator {
         } catch (IOException ex) {
             Logger.getLogger(SWF_Workload_Generator.class.getName()).log(Level.SEVERE, null, ex);
         }
+    }
+
+    public static int queuesContainThisQueue(String queue) {
+
+        for (int i = 0; i < queue_names.length; i++) {
+            if (queue_names[i].contains(queue)) {
+                //System.out.println(i+" Exclusive queue found: "+queue_names[i]);
+                return i;
+            }
+        }
+        return -1;
     }
 
 }

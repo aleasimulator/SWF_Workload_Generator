@@ -1,0 +1,6 @@
+;user_id	user_name	shares	CPU_quota
+;-----------------------------------------------------------------------------
+0	urgent_large_user 	 2 	 500
+1	urgent_tiny_user 	 2 	 500
+2	normal_large_user 	 1 	 400
+3	normal_small_user 	 1 	 400

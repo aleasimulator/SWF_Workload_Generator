@@ -81,6 +81,36 @@ user_names_normal=normal_large_user \t 1 \t 64,normal_small_user \t 1 \t 64
 ...
 ```
 
+### Extended SWF format
+The generator adds 3 new fields to the standard SWF: `used_GPUs`, `soft_walltime`, and `required_properties`. The format is explained bellow:
+```ini
+; --------------------------------------------------------------------------- 
+; JOB FIELDS MEANING: 
+; --------------------------------------------------------------------------- 
+;  0: job_id              (unique ID)
+;  1: submit_time         (in seconds from 0)
+;  2: wait_time           (in seconds)
+;  3: runtime             (in seconds)
+;  4: allocated_nodes     (number of all allocated nodes/or number of all allocated CPU cores)
+;  5: CPU_time_used       (not used, same as runtime)
+;  6: RAM                 (used, in kB)
+;  7: required_nodes      (same as allocated nodes/cores)
+;  8: walltime_limit      (user-provided upper bound runtime limit in seconds)
+;  9: RAM                 (requested, in kB)
+; 10: job_status          (always 1, not used) 
+; 11: user_id             (must match with user IDs specified in user desc. file)
+; 12: group_id            (must match with group IDs specified in group desc. file)
+; 13: executable_number   (-1, not used) 
+; 14: queue_id            (must match with queue IDs specified in queue desc. file)
+; 15: partition           (-1, not used) 
+; 16: preceding_job       (-1, not used) 
+; 17: think_time          (-1, not used) 
+; 18: used_GPUs           (sum over all used nodes, must be divisible by the number of used nodes) 
+; 19: soft_walltime       ("expected" runtime in seconds - smaller than walltime - that can be exceeded without killing the job) 
+; 20: required_properties (separated by ":", example: "all:excl:2x4" The first property "all" is used to match the String property of a cluster. If the property is "all", then this job can execute on any cluster. Otherwise, only a cluster that matches this String is acceptable. "excl" means that this job requires whole node(s) exclusively (no space-sharing with other jobs). "2x4" means that this job requires two nodes, each having at least 4 CPU cores.)
+; --------------------------------------------------------------------------- 
+``` 
+
 ### Running the generator
 This generator is written in Java and is distributed as maven project. To start the generator, run:
 ```
