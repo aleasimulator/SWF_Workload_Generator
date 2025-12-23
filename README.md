@@ -19,17 +19,18 @@ In the generator configuration various parameters allows you to:
 - Specify the percentage of urgent users’ load. 
   - E.g., 30% means that all urgent users will be responsible for ~30% of all utilized CPU hours (i.e., 70% of job time will be assigned to jobs of normal users).
 - Specify both urgent and normal users, their shares & CPU quotas, and parent groups
-  - Specify the type of user workload
-  - Three types are supported: tiny, small, large
+  - Specify the type of user workload (i.e., size)
+  -- Three types are supported: tiny, small, large
+  - Specify how the CPU hours are divided among users (either equally or differently, using relative weights)
 - Specify groups and their priorities and CPU quota limits
 - Specify queues, their priorities, and CPU quota limits
 - Specify clusters, their names, nodes, GPUs, and properties 
   - (a property is used to steer a job toward an eligible cluster) 
 - Select whether jobs occupy whole nodes or can run side-by-side with other jobs (space-sharing)
-  - Specify the maximum number of nodes that can be allocated 
+  - Specify job topology, i.e., number of nodes and CPU cores per node 
 - Specify job batch sizes (number of jobs submitted at once), 
   - 3 batch sizes are supported (for large, small, and tiny jobs). 
-  - Specify sizes (intervals) of tiny, small, and large jobs
+  - Specify sizes of tiny, small, and large jobs
 - Specify typical job runtime limits (aka walltimes)
   - Actual runtimes are randomly generated based on the selected walltime limit
 - Specify typical inter-batch idle periods, used to model the “think time” of a user

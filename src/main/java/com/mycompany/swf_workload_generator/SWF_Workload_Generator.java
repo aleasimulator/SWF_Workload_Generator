@@ -96,7 +96,10 @@ public class SWF_Workload_Generator {
     static String[] machine_names;
 
     static boolean all_jobs_allocate_whole_nodes;
+    static int[] user_ratios;
     static int[] number_of_nodes_for_job;
+    static int[] normal_users_job_ratios;            
+    static int[] urgent_users_job_ratios;     
     static int[] tiny_job_sizes;
     static int[] small_job_sizes;
     static int[] large_job_sizes;
@@ -149,6 +152,8 @@ public class SWF_Workload_Generator {
         batch_size_tiny = cfg.getInt("batch_size_tiny");
 
         number_of_nodes_for_job = cfg.getIntArray("number_of_nodes_for_job");
+        normal_users_job_ratios = cfg.getIntArray("normal_users_job_ratios");
+        urgent_users_job_ratios = cfg.getIntArray("urgent_users_job_ratios");
         tiny_job_sizes = cfg.getIntArray("tiny_job_sizes");
         small_job_sizes = cfg.getIntArray("small_job_sizes");
         large_job_sizes = cfg.getIntArray("large_job_sizes");
@@ -195,31 +200,38 @@ public class SWF_Workload_Generator {
         int user_id_baseline = 0;
         int perc = 0;
         //max. cpu time for one day and desired system load
-        long max_cpu_seconds_per_day = Math.round((total_cpus * 3600 * 24) * system_load);
+        long max_cpu_seconds_per_day = Math.round((total_cpus * 3600L * 24) * system_load);
+        System.out.println("Max per day = "+max_cpu_seconds_per_day +" tot cpus:"+(total_cpus* 3600 * 24 * system_load));
 
         if (user_type.equals("urgent")) {
             user_names = user_names_urgent;
             perc = load_percentage_urgent;
             inter_batch_idle_period = inter_batch_idle_period_urgent;
+            user_ratios = urgent_users_job_ratios;
             // how much these users can consume of the overal cput time
             max_cpu_seconds_per_day = Math.round(max_cpu_seconds_per_day * (perc / 100.0));
         } else {
             user_names = user_names_normal;
             perc = load_percentage_normal;
             inter_batch_idle_period = inter_batch_idle_period_normal;
+            user_ratios = normal_users_job_ratios;
             // to get correct user IDs in the merged file
             max_cpu_seconds_per_day = Math.round(max_cpu_seconds_per_day * (perc / 100.0));
             user_id_baseline = user_names_urgent.length;
         }
 
         // create all jobs for given user class
-        long average_cpu_time_for_one_user = max_cpu_seconds_per_day / user_names.length;
+        
+        
         int current_user_id = 0;
+        int sum_ratios = sumUserRatios(user_ratios);
 
         for (int i = 0; i < user_names.length; i++) {
+            // adjust user allowance based on his/her relative ratio of CPU time
+            long average_cpu_time_for_one_user = Math.round(max_cpu_seconds_per_day * (user_ratios[i]/(sum_ratios*1.0)));
             job_id = 1;
             current_user_id = i;
-            System.out.println("~~~~~~~~ " + (user_names[current_user_id].split("\t")[0]) + " ~~~~~~~~");
+            System.out.println("USER: " + (user_names[current_user_id].split("\t")[0]) + " requests: "+Math.round(average_cpu_time_for_one_user/3600.0)+" CPU hours");
 
             String user_name = user_names[current_user_id];
             int group = 0;
@@ -253,21 +265,27 @@ public class SWF_Workload_Generator {
                 System.out.println("---------- Day: " + d + "----------");
                 //create batches for one day and one user
                 current_time = (start_time * d);
-                long cpu_time_for_one_user = 0;
+                long cpu_time_for_one_user = 0l;
+                
+                System.out.println(cpu_time_for_one_user+" < "+average_cpu_time_for_one_user);
                 while (cpu_time_for_one_user < average_cpu_time_for_one_user) {
 
+                    
                     for (int b = 0; b < batch_size; b++) {
 
                         current_time += 1;
                         // if we move to next day, reset the job arrival timer
                         if (current_time > (start_time * d) + start_time) {
                             current_time = (start_time * d) + seed.nextInt(6 * 3600);
-                            System.out.println("Arrival time reset...");
+                            System.out.println("Arrival time reset... "+cpu_time_for_one_user);
                         }
                         // choose walltime randomly from predefined "typical classes"
                         int walltime_limit = job_runtime_limit[seed.nextInt(job_runtime_limit.length)];
-                        // choose runtime randomly from predefined walltime (and decrease it slightly by 0..2h) to reflect user walltime overestimation
-                        int runtime = Math.max(60, walltime_limit - seed.nextInt(7200));
+                        // choose runtime randomly from predefined walltime (and decrease it by 0..70%) to reflect user walltime overestimation
+                        int decrease = Long.valueOf(Math.round(seed.nextDouble(0.0, 0.7)*walltime_limit)).intValue();
+                        decrease = Math.min(decrease, walltime_limit);
+                        int runtime = Math.max(60, walltime_limit - decrease);
+                        System.out.println(runtime +" < "+walltime_limit);
                         int ram = used_RAM[seed.nextInt(used_RAM.length)];
 
                         int required_CPUs_per_node = 1;
@@ -300,13 +318,14 @@ public class SWF_Workload_Generator {
                             total_used_gpus = used_GPU_cards_per_node[seed.nextInt(used_GPU_cards_per_node.length)] * number_of_nodes;
                         }
 
-                        int soft_walltime = runtime;
+                        
 
                         // we provide additional description of job layout (num_nodes x CPUs per node)
                         String job_properties = properties;
                         if (allow_exclusive_jobs) {
                             // if the random number (0..100) falls bellow exclusive_percentage then this job is exclusive
-                            if (exclusive_percentage > excl_seed.nextInt(0, 101)) {
+                            int excl_int = excl_seed.nextInt(0, 100);
+                            if (exclusive_percentage > excl_int) {
                                 job_properties = job_properties + ":excl";
                             }
                         }
@@ -318,27 +337,38 @@ public class SWF_Workload_Generator {
 
                         // if the job is exclusive, use whole node's size as the number of consumed cpu cores AND possibly use special queue for it
                         if (job_properties.contains(":excl")) {
-                            cpu_time_for_one_user += runtime * largest_node_cpus * number_of_nodes;
+                            // must avoid huge overtime for exclusive jobs
+                            if((cpu_time_for_one_user + ((long) runtime * largest_node_cpus * number_of_nodes)) > average_cpu_time_for_one_user){
+                                long avail_time = Math.max(0, average_cpu_time_for_one_user - cpu_time_for_one_user);
+                                avail_time = avail_time / (largest_node_cpus * number_of_nodes);
+                                System.out.println("Decrease runtime to: "+avail_time);
+                                runtime = Math.max(1,Long.valueOf(avail_time).intValue());
+                                //decrease runtime to fit in
+                            }
+                            cpu_time_for_one_user += (long) runtime * largest_node_cpus * number_of_nodes;
                             int qindex = queuesContainThisQueue("exclusive");
-                            System.out.println(job_id+" EXCL "+qindex+" prop:"+job_properties+" queue:"+queue);
+                            //System.out.println(job_id+" EXCL "+qindex+" prop:"+job_properties+" queue:"+queue);
                             if (qindex > -1 && job_properties.contains("normal")) {
                                 queue_id = qindex;
                             }
 
                         } else {
-                            cpu_time_for_one_user += runtime * required_CPUs_per_node * number_of_nodes;
+                            cpu_time_for_one_user += (long) runtime * required_CPUs_per_node * number_of_nodes;
                         }
 
                         if (cpu_time_for_one_user >= average_cpu_time_for_one_user) {
+                            System.out.println("Ending... over_time: "+cpu_time_for_one_user+" droping: "+((long) runtime * largest_node_cpus * number_of_nodes));
                             break;
                         }
 
+                        int soft_walltime = runtime;
                         if (job_id % 50 == 0) {
                             System.out.println(current_time + ": Adding " + job_id + " job from day " + d + " of user " + (user_names[current_user_id].split("\t")[0]) + " into workload... ");
                         }
 
                         String jobstring = "0 " + runtime + " " + (required_CPUs_per_node * number_of_nodes) + " " + runtime + " " + ram + " " + (required_CPUs_per_node * number_of_nodes)
-                                + " " + walltime_limit + " " + ram + " 1 " + (current_user_id + user_id_baseline) + " " + group + " -1 " + queue_id + " -1 -1 -1 " + total_used_gpus + " " + soft_walltime + " " + job_properties;
+                                + " " + walltime_limit + " " + ram + " 1 " + (current_user_id + user_id_baseline) + " " + group + " -1 " + queue_id + " -1 -1 -1 " 
+                                + total_used_gpus + " " + soft_walltime + " " + job_properties;
                         Job j = new Job(current_time, job_id + "", jobstring);
                         created_jobs.add(j);
 
@@ -546,6 +576,15 @@ public class SWF_Workload_Generator {
             }
         }
         return -1;
+    }
+    
+    public static int sumUserRatios(int[] ratios) {
+
+        int sum = 0;
+        for (int i = 0; i < ratios.length; i++) {
+            sum += ratios[i];
+        }
+        return sum;
     }
 
 }

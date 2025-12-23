@@ -1,0 +1,3 @@
+;cl_id	name		nodes	CPUs	speed	GB_RAM	properties	GPUs
+;-----------------------------------------------------------------------------
+0	cl_normal 	 9408 	 112 	 1 	 256 	 normal 	 4
